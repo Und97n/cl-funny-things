@@ -110,7 +110,7 @@
                     (alc:with-context (context device)
                       (alc:make-context-current context)
                       (loop :for x :from start :to end
-                            :do (play-sound notes #'g2-seq x :tool 3 :duration  (duration-fnc x)))))))
+                            :do (play-sound notes #'g2-seq x :tool 3 :duration (duration-fnc x)))))))
               :name "sound-2")))
     (unwind-protect (progn
                       (loop :for x :from start :to end
