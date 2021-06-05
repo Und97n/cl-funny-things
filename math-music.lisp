@@ -14,25 +14,16 @@
 (defun init-tone (wf freq &optional phase)
   (alut:load-memory-waveform wf (float freq) (float phase) 0.20))
 
-(defun gen-notes (wf &optional (a 0) (b 127) (phase 0))
-  (assert (>= a 0))
-  (assert (<= b 135))
-  (loop :for x :from a :to b
+(defun gen-notes (wf &key (start 0) (end 127) (phase 0))
+  (assert (>= start 0))
+  (assert (<= end 135))
+  (loop :for x :from start :to end
+        ;; Basic formula for note frequency
         :for freq := (* 440 (expt 2 (/ (- x 69) 12)))
         :collect (init-tone wf freq phase)))
 
-
-(defmacro until (condition &body body)
-  (let ((block-name (gensym)))
-    `(block ,block-name
-       (loop
-         (if ,condition
-             (return-from ,block-name nil)
-             (progn
-               ,@body))))))
-
-
-(defun gambie-seq (integer)
+;; Interesting sequence generator
+(defun g-seq (integer)
   (labels ((%iterate (number last-bit acc rank)
              (if (> number 0)
                  (let ((bit (mod number 2)))
@@ -42,17 +33,8 @@
                  acc)))
     (%iterate integer (- 1 (mod integer 2)) 0 0)))
 
-(defun gg-seq (integer)
-  (gambie-seq (gambie-seq integer)))
-
- (defun print-thread-info ()
-      (let* ((curr-thread (bt:current-thread))
-             (curr-thread-name (bt:thread-name curr-thread))
-             (all-threads (bt:all-threads)))
-        (format t "Current thread: ~a~%~%" curr-thread)
-        (format t "Current thread name: ~a~%~%" curr-thread-name)
-        (format t "All threads:~% ~{~a~%~}~%" all-threads))
-      nil)
+(defun g2-seq (integer)
+  (g-seq (g-seq integer)))
 
 (defun play-note (notes i &optional (duration 0.2))
   (al:with-buffer (buffer)
@@ -61,12 +43,10 @@
       (al:source source :buffer buffer)
       (al:source source :position #(1 1 1))
       (al:source source :velocity #(0 0 0))
-      ;; Place listener at (1 1 1), and have it
-      ;; face (0 0 0).
+
       (al:listener :position #(1 1 1))
       (al:listener :orientation #(0 0 0
                                   0 0 0))
-      ;; Let the music play...
       ;; (al:source source :looping :true)
       (al:source-play source)
       (al:source source :looping :false)
@@ -85,9 +65,9 @@
 (defparameter *sync-semaphore-2* nil)
 
 (defun duration-fnc (val)
-  (- 1.2 (expt (1+ (gg-seq val)) -0.25)))
+  (- 1.2 (expt (1+ (g2-seq val)) -0.25)))
 
-(defun play-sound (notes fnc i &optional tool (duration 0.2))
+(defun play-sound (notes fnc i &key tool (duration 0.2))
   (when (and *sync-semaphore-1* *sync-semaphore-2*)
     (bt:signal-semaphore *sync-semaphore-2*)
     (bt:wait-on-semaphore *sync-semaphore-1*))
@@ -106,7 +86,7 @@
     (alut:with-init
       (setf notes
             (mapcar (lambda (tool)
-                      (gen-notes tool *lower-note* (+ *lower-note* *notes-count*) phase))
+                      (gen-notes tool :start *lower-note* :end (+ *lower-note* *notes-count*) :phase phase))
                     *tools*)))
     notes))
 
@@ -121,7 +101,7 @@
                     (alc:with-context (context device)
                       (alc:make-context-current context)
                       (loop :for x :from start :to end
-                            :do (play-sound notes #'gambie-seq x 0 (duration-fnc x)))))))
+                            :do (play-sound notes #'g-seq x :tool 0 :duration (duration-fnc x)))))))
               :name "sound-1"))
          (t2 (bt:make-thread
               (lambda ()
@@ -130,7 +110,7 @@
                     (alc:with-context (context device)
                       (alc:make-context-current context)
                       (loop :for x :from start :to end
-                            :do (play-sound notes #'gg-seq x 3 (duration-fnc x)))))))
+                            :do (play-sound notes #'g2-seq x :tool 3 :duration  (duration-fnc x)))))))
               :name "sound-2")))
     (unwind-protect (progn
                       (loop :for x :from start :to end

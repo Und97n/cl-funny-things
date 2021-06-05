@@ -18,7 +18,7 @@
 
 (defparameter *max-pixel* 512)
 (defparameter *exposure* 1)
-(defparameter *pixels* (make-array (list *screen-width* *screen-height*)))
+(defparameter *pixels* (make-array (list *screen-width* *screen-height*) :initial-element 0 :element-type 'fixnum))
 
 (defparameter *start-x* 2.8d0)
 (defparameter *end-x* 4.d0)
@@ -28,15 +28,19 @@
 (defparameter *max-iterations* 1000)
 (defparameter *min-iterations* 300)
 
+(declaim (type double-float *start-x* *end-x* *start-y* *end-y*)
+         (type fixnum *screen-width* *screen-height* *max-pixel*)
+         (type (simple-array fixnum 2) *pixels*))
+
 (defmacro with-window-renderer ((window renderer) &body body)
   `(sdl2:with-init (:video)
      (sdl2:with-window (,window
-                        :title "SDL2 Tutorial"
+                        :title "Bifurcational diagram"
                         :w *screen-width*
                         :h *screen-height*
                         :flags '(:shown))
        (sdl2:with-renderer (,renderer ,window :index -1 :flags '(:accelerated))
-                           ,@body))))
+         ,@body))))
 
 (defun load-texture (renderer filename)
   (sdl2:create-texture-from-surface renderer (sdl2-image:load-image filename)))
@@ -64,11 +68,19 @@
     (format t "~A ~A ~A ~A~%" *start-x* *end-x* *start-y* *end-y*)
     t))
 
+(declaim (ftype (function (double-float) fixnum) x2sx)
+         (inline x2sx))
 (defun x2sx (x)
-  (truncate (/ (* (- x *start-x*) *screen-width*) (- *end-x* *start-x*))))
+  (declare (optimize (speed 3) (safety 0))
+           (type double-float x))
+  (values (the fixnum (truncate (/ (* (- x *start-x*) *screen-width*) (- *end-x* *start-x*))))))
 
+(declaim (ftype (function (double-float) fixnum) y2sy)
+         (inline y2sy))
 (defun y2sy (y)
-  (truncate (- *screen-height* (/ (* (- y *start-y*) *screen-height*) (- *end-y* *start-y*)))))
+  (declare (optimize (speed 3) (safety 0))
+           (type double-float y))
+  (values (the fixnum (truncate (- *screen-height* (/ (* (- y *start-y*) *screen-height*) (- *end-y* *start-y*)))))))
 
 (defun sx2x (sx)
   (+ (* (/ sx *screen-width*) (- *end-x* *start-x*))
@@ -78,37 +90,37 @@
   (+ (* (- 1 (/ sy *screen-height*)) (- *end-y* *start-y*))
      *start-y*))
 
-(defun shit-pixel (x y &optional (inc-val 1))
-  ;; (declare (optimize (speed 3) ;; (safety 0)
-  ;;                    )
-  ;;          (type double-float x y)
-  ;;          (type fixnum inc-val))
+(declaim (ftype (function (double-float double-float)) fill-pixel))
+(defun fill-pixel (x y)
+  (declare (optimize (speed 3) (safety 0))
+           (type double-float x y))
   (let ((px (x2sx x))
         (py (y2sy y)))
+    (declare (type fixnum px py))
     (when (and (> px 0)
                (< px *screen-width*)
                (> py 0)
                (< py *screen-height*))
-      (let ((new-val (+ (aref *pixels* px py) inc-val)))
+      (let ((new-val (1+ (aref *pixels* px py))))
         (unless (> new-val *max-pixel*)
           (setf (aref *pixels* px py)
-                new-val))))))
+                new-val)))))
+  t)
 
 (defun bifur-loop (r &key (max-iterations *max-iterations*) (start-iterations *min-iterations*))
-  (declare (optimize (speed 3))
+  (declare (optimize (speed 3) (safety 0))
            (type fixnum max-iterations start-iterations)
            (type double-float r))
-  (labels ((%iterate (x r iterations)
+  (labels ((%iterate (x iterations)
              (declare (type fixnum iterations)
-                      (type double-float x r))
-             (let ((nx (* x r (- 1.0 x))))
-               (declare (type double-float nx))
+                      (type double-float x))
+             (let ((nx (the double-float (* x r (- 1.0 x)))))
                (when (> iterations start-iterations)
-                 (shit-pixel r nx))
+                 (fill-pixel r nx))
                (when (< iterations max-iterations)
-                 (%iterate nx r (1+ iterations))))))
+                 (%iterate nx (1+ iterations))))))
     (when (and (> r 0.d0) (< r 4.d0))
-      (%iterate 0.5d0 r 0))))
+      (%iterate 0.5d0 0))))
 
 (defun random-double (start end)
   (+ start
@@ -175,20 +187,12 @@
                     (:scancode-space
                      (loop :for x :from 0 :to 4000 :do
                        (bifur-loop (random-double (max *start-x* 0) (min 4 *end-x*))))
-                     (setf *repaint* t))
-                    ;; (:scancode-up (setf image (getf images :up)))
-                    ;; (:scancode-down (setf image (getf images :down)))
-                    ;; (:scancode-left (setf image (getf images :left)))
-                    ;; (:scancode-right (setf image (getf images :right)))
-                    ;; (t (setf image (getf images :default)))
-                    ))
+                     (setf *repaint* t))))
         (:idle ()
                (when *repaint*
                  ;; (sdl2:set-render-draw-color renderer #xFF #xFF #xFF #xFF)
                  ;; (sdl2:render-clear renderer)
                  (sdl2:set-render-draw-color renderer #xFF #x00 #x00 #xFF)
-                 (sdl2:render-draw-line renderer (x2sx 0) (y2sy -1) (x2sx 0) (y2sy 1))
-                 (sdl2:render-draw-line renderer (x2sx -1) (y2sy 0) (x2sx 1) (y2sy 0))
                  (with-all-pixels (x y)
                    (let ((color (min 255
                                      (max 0
@@ -198,8 +202,8 @@
                      (sdl2:set-render-draw-color renderer #x00 #x00 color #xFF)
                      (sdl2:render-draw-point renderer x y)))
                  (sdl2:set-render-draw-color renderer #xFF #x00 #x00 #xFF)
-                 (sdl2:render-draw-line renderer (x2sx 0) (y2sy -1) (x2sx 0) (y2sy 1))
-                 (sdl2:render-draw-line renderer (x2sx -0.1d0) (y2sy 0) (x2sx 4) (y2sy 0))
+                 (sdl2:render-draw-line renderer (x2sx 0.d0) (y2sy -1.d0) (x2sx 0.d0) (y2sy 1.d0))
+                 (sdl2:render-draw-line renderer (x2sx -1.d0) (y2sy 0.d0) (x2sx 1.d0) (y2sy 0.d0))
                  (when mouse-start-coords
                    (let ((xx1 (min (second mouse-start-coords) last-mouse-x))
                          (yy1 (min (third mouse-start-coords) last-mouse-y))
@@ -208,29 +212,4 @@
                      (sdl2:set-render-draw-color renderer #x00 #xFF #x00 #xFF)
                      (sdl2:render-draw-rect renderer (sdl2:make-rect xx1 yy1 (- xx2 xx1) (- yy2 yy1)))))
                  (sdl2:render-present renderer)
-                 (setf *repaint* nil))
-               ;; (sdl2:set-render-draw-color renderer #xFF #xFF #xFF #xFF)
-               ;; (sdl2:set-render-draw-color renderer #xFF #x00 #x00 #xFF)
-               ;; (sdl2:render-draw-point renderer (random *screen-width*) (random *screen-height*))
-               ;; (sdl2:render-clear renderer)
-               ;; (sdl2:render-fill-rect renderer
-               ;;                        (sdl2:make-rect (/ *screen-width* 4)
-               ;;                                        (/ *screen-height* 4)
-               ;;                                        (/ *screen-width* 2)
-               ;;                                        (/ *screen-height* 2)))
-               ;; (sdl2:set-render-draw-color renderer #x00 #xFF #x00 #xFF)
-               ;; (sdl2:render-draw-rect renderer
-               ;;                        (sdl2:make-rect (round (/ *screen-width* 6))
-               ;;                                        (round (/ *screen-height* 8))
-               ;;                                        (round (* 2/3 *screen-width*))
-               ;;                                        (round (* 2/3 *screen-height*))))
-               ;; (sdl2:set-render-draw-color renderer #x00 #x00 #xFF #xFF)
-               ;; (sdl2:render-draw-line renderer
-               ;;                        0
-               ;;                        (/ *screen-height* 2)
-               ;;                        *screen-width*
-               ;;                        (/ *screen-height* 2))
-               ;; (sdl2:set-render-draw-color renderer #xFF #xFF #x00 #xFF)
-               ;; (loop for i from 0 below *screen-height* by 4
-               ;;       do (sdl2::render-draw-point renderer (/ *screen-width* 2) i))
-               )))))
+                 (setf *repaint* nil)))))))
