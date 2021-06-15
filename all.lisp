@@ -6,6 +6,8 @@
   (:use :cl)
   (:nicknames :funny)
   (:use :funny/bifurcational-diagram
-        :funny/math-music))
+        :funny/math-music
+        :funny/digits-multiplicator
+        :funny/primes-fun))
 
 (in-package :funny/all)
