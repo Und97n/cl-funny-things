@@ -8,6 +8,7 @@
   (:use :funny/bifurcational-diagram
         :funny/math-music
         :funny/digits-multiplicator
-        :funny/primes-fun))
+        :funny/primes-fun
+        :funny/pacman-tree))
 
 (in-package :funny/all)
